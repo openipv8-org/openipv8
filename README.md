@@ -85,7 +85,7 @@ The example simulates an IPv8 device (the client) sending an IPv8 device (the se
 ## Security Note
 This code is not well vetted. There might be memory vulnerabilities in it. You can imagine that a program that parses incoming network packets running with root privileges might be an issue if it's vulnerable. I recommend compiling it with the `-O=safe` or `-O=debug` flag (e.g. `jvbuild build example_server -O=safe`). In safe mode and debug mode Zig adds memory safety railguards that catch out of bounds accesses on arrays, double-frees, use-after-frees, and memory leaks.
 
-Zig >>>>>>>>>>>>> C
+Zig mogs on C
 
 ## ToDo
 - Implement an IPv8 kernel driver for Linux.

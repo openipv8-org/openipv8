@@ -33,6 +33,4 @@
             { remote: "https://github.com/vExcess/zig-vexlib" }
         ]
     },
-
-    default: "example",
 }
