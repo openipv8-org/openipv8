@@ -1,0 +1,4 @@
+.zig-cache
+zig-out
+jvbuild-out
+jvbuild-cache

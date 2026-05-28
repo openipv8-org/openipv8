@@ -1,0 +1,36 @@
+{
+    name: "openipv8",
+    description: "Open IPv8 Implementation",
+    author: "VExcess <github.com/vexcess>",
+    license: "MIT",
+    
+    modules: {
+        example_server: {
+            root: "./example/server.zig",
+            dependencies: [
+                "ipv8",
+                "vexlib",
+            ]
+        },
+
+        example_client: {
+            root: "./example/client.zig",
+            dependencies: [
+                "ipv8",
+                "vexlib",
+            ]
+        },
+
+        ipv8: {
+            type: "zig:lib",
+            root: "src/ipv8.zig",
+            dependencies: [
+                "vexlib",
+            ]
+        },
+
+        $importAll: [
+            { remote: "https://github.com/vExcess/zig-vexlib" }
+        ]
+    },
+}
