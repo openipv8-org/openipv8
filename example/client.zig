@@ -3,6 +3,7 @@ const net = std.net;
 const posix = std.posix;
 
 const ipv8 = @import("ipv8");
+const UDPPacket = ipv8.UDP.UDPPacket;
 const IPv8Packet = ipv8.IPv8Packet;
 
 const vexlib = @import("vexlib");
@@ -12,7 +13,7 @@ pub fn main() !void {
     const allocator = generalPurposeAllocator.allocator();
     vexlib.init(&allocator);
 
-    const serverAddr = try net.Address.parseIp4("127.0.0.1", 3000);
+    const serverAddr = try net.Address.parseIp4("127.0.0.0", 3000);
     
     // socket to send raw IP packets (requires sudo)
     const socket: posix.socket_t = try posix.socket(serverAddr.any.family, posix.SOCK.RAW, posix.IPPROTO.RAW);
@@ -28,11 +29,14 @@ pub fn main() !void {
     );
 
     var payload = "Hello from IPv8!";
+    var udpPacket = UDPPacket.alloc(3000, 3001, @constCast(payload[0..payload.len]));
+    const udpPacketBuffer = try allocator.alloc(u8, udpPacket.payload.len + 8);
+    defer allocator.free(udpPacketBuffer);
+    _= try udpPacket.writeToBuffer(udpPacketBuffer);
     var packet = try IPv8Packet.alloc(
-        [8]u8{127,0,0,1,0,0,0,2},
-        [8]u8{127,0,0,1,0,0,0,1},
-        // ipv8.Protocol.UDP
-        @constCast(payload[0..payload.len]), 253, null
+        [8]u8{127,0,0,0,0,0,0,2},
+        [8]u8{127,0,0,0,0,0,0,1},
+        udpPacketBuffer, ipv8.Protocol.UDP, null
     );
 
     packet.ipv4ify();

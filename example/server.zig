@@ -28,8 +28,8 @@ pub fn main() !void {
     var server = try IPv8Server.init();
     defer server.close();
 
-    try server.listen(.{127,0,0,1,0,0,0,1}, 0, handler);
-    std.debug.print("IPv8 server listening on 127.0.0.1.0.0.0.1\n", .{});
+    try server.listen(.{127,0,0,0,0,0,0,1}, 0, handler);
+    std.debug.print("IPv8 server listening on 127.0.0.0.0.0.0.1\n", .{});
 
     server.thread.?.join();
 }

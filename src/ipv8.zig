@@ -23,6 +23,9 @@
 const std = @import("std");
 const posix = std.posix;
 const vexlib = @import("vexlib");
+const As = vexlib.As;
+
+pub const UDP = @import("./udp.zig");
 
 pub const IPv8Error = error {
     PacketTooSmall,
@@ -45,7 +48,7 @@ pub const Flags = struct {
     moreFragments: bool
 };
 
-pub const IPv8Packet = struct {
+pub const IPv8Header = struct {
     version: u4 = 8,
     ihl: u4,
     tos: u8,
@@ -58,6 +61,15 @@ pub const IPv8Packet = struct {
     checksum: u16 = 0,
     src: [8]u8,
     dst: [8]u8,
+};
+
+const UIPv8Payload = union(enum) {
+    bytes: []u8,
+    udpPacket: UDP.UDPPacket
+};
+
+pub const IPv8Packet = struct {
+    header: IPv8Header,
     payload: []u8,
     buffer: []u8,
 
@@ -76,25 +88,27 @@ pub const IPv8Packet = struct {
         }
 
         var packet = IPv8Packet{
-            .version = 8,
-            .ihl = 7,
-            .tos = 0,
-            .totalLength = @as(u16, @truncate(dataLength)),
-            .identification = 0,
-            .flags = _flags,
-            .fragmentOffset = 0,
-            .ttl = 64,
-            .protocol = protocol,
-            .checksum = 0,
-            .src = src,
-            .dst = dst,
+            .header = IPv8Header{
+                .version = 8,
+                .ihl = 7,
+                .tos = 0,
+                .totalLength = As.u16T(dataLength),
+                .identification = 0,
+                .flags = _flags,
+                .fragmentOffset = 0,
+                .ttl = 64,
+                .protocol = protocol,
+                .checksum = 0,
+                .src = src,
+                .dst = dst,
+            },
             .payload = payload,
             .buffer = try vexlib.allocatorPtr.*.alloc(u8, dataLength)
         };
 
         _= try packet.writeToBuffer(packet.buffer);
-        const headerLen = @as(usize, packet.ihl) * 4;
-        packet.payload = packet.buffer[headerLen..packet.totalLength];
+        const headerLen = As.usize(packet.header.ihl) * 4;
+        packet.payload = packet.buffer[headerLen..packet.header.totalLength];
 
         return packet;
     }
@@ -129,60 +143,63 @@ pub const IPv8Packet = struct {
         }
 
         var packet = IPv8Packet{
-            .version = @as(u4, @truncate(buffer[0] >> 4)),
-            .ihl = @as(u4, @truncate(buffer[0])),
-            .tos = buffer[1],
-            .totalLength = std.mem.readInt(u16, buffer[2..4], .big),
-            .identification = std.mem.readInt(u16, buffer[4..6], .big),
-            .flags = @as(u3, @truncate(buffer[6] >> 5)),
-            .fragmentOffset = @as(u13, @truncate(std.mem.readInt(u16, buffer[6..8], .big) & 0b0001111111111111)),
-            .ttl = buffer[8],
-            .protocol = buffer[9],
-            .checksum = std.mem.readInt(u16, buffer[10..12], .big),
-            .src = srcBuffer,
-            .dst = dstBuffer,
+            .header = IPv8Header{
+                .version = @as(u4, @truncate(buffer[0] >> 4)),
+                .ihl = @as(u4, @truncate(buffer[0])),
+                .tos = buffer[1],
+                .totalLength = std.mem.readInt(u16, buffer[2..4], .big),
+                .identification = std.mem.readInt(u16, buffer[4..6], .big),
+                .flags = @as(u3, @truncate(buffer[6] >> 5)),
+                .fragmentOffset = @as(u13, @truncate(std.mem.readInt(u16, buffer[6..8], .big) & 0b0001111111111111)),
+                .ttl = buffer[8],
+                .protocol = buffer[9],
+                .checksum = std.mem.readInt(u16, buffer[10..12], .big),
+                .src = srcBuffer,
+                .dst = dstBuffer,
+            },
             .payload = undefined,
             .buffer = undefined
         };
 
-        if (buffer.len < packet.totalLength) return IPv8Error.PacketTooSmall;
+        const totalLength = packet.header.totalLength;
+        if (buffer.len < totalLength) return IPv8Error.PacketTooSmall;
         
-        packet.buffer = try vexlib.allocatorPtr.*.alloc(u8, packet.totalLength);
-        @memcpy(packet.buffer, buffer[0..packet.totalLength]);
-        const headerLen = @as(usize, packet.ihl) * 4;
-        packet.payload = packet.buffer[headerLen..packet.totalLength];
+        packet.buffer = try vexlib.allocatorPtr.*.alloc(u8, totalLength);
+        @memcpy(packet.buffer, buffer[0..totalLength]);
+        const headerLen = As.usize(packet.header.ihl) * 4;
+        packet.payload = packet.buffer[headerLen..totalLength];
 
         return packet;
     }
 
     pub fn writeToBuffer(self: *const IPv8Packet, buffer: []u8) !usize {
-        buffer[0] = (@as(u8, self.version) << 4) | self.ihl;
-        buffer[1] = self.tos;
-        std.mem.writeInt(u16, buffer[2..4], self.totalLength, .big);
-        std.mem.writeInt(u16, buffer[4..6], self.identification, .big);
-        std.mem.writeInt(u16, buffer[6..8], (@as(u16, self.flags) << 13) | @as(u16, self.fragmentOffset), .big);
-        buffer[8] = self.ttl;
-        buffer[9] = self.protocol;
+        buffer[0] = (As.u8(self.header.version) << 4) | self.header.ihl;
+        buffer[1] = self.header.tos;
+        std.mem.writeInt(u16, buffer[2..4], self.header.totalLength, .big);
+        std.mem.writeInt(u16, buffer[4..6], self.header.identification, .big);
+        std.mem.writeInt(u16, buffer[6..8], (As.u16(self.header.flags) << 13) | As.u16(self.header.fragmentOffset), .big);
+        buffer[8] = self.header.ttl;
+        buffer[9] = self.header.protocol;
         // checksum must be set to 0 before checksum calculation
         std.mem.writeInt(u16, buffer[10..12], 0, .big);
-        @memcpy(buffer[12..16], self.src[0..4]);
-        @memcpy(buffer[20..24], self.src[4..8]);
-        @memcpy(buffer[16..20], self.dst[0..4]);
-        @memcpy(buffer[24..28], self.dst[4..8]);
+        @memcpy(buffer[12..16], self.header.src[0..4]);
+        @memcpy(buffer[20..24], self.header.src[4..8]);
+        @memcpy(buffer[16..20], self.header.dst[0..4]);
+        @memcpy(buffer[24..28], self.header.dst[4..8]);
         @memcpy(buffer[28..(28 + self.payload.len)], self.payload);
-        std.mem.writeInt(u16, buffer[10..12], self.checksum, .big);
+        std.mem.writeInt(u16, buffer[10..12], self.header.checksum, .big);
 
         return 28 + self.payload.len;
     }
 
     pub fn ipv4ify(self: *IPv8Packet) void {
         // set the IP version to 4
-        self.buffer[0] = (self.buffer[0] & 0b00001111) | (@as(u8, 4) << 4);
-        self.version = 4;
+        self.buffer[0] = (self.buffer[0] & 0b00001111) | (As.u8(4) << 4);
+        self.header.version = 4;
 
         // set the reserved flag bit
         self.buffer[6] = self.buffer[6] | 0b10000000;
-        self.flags = @as(u3, @truncate(self.buffer[6] >> 5));
+        self.header.flags = @as(u3, @truncate(self.buffer[6] >> 5));
 
         // recalculate checksum
         // checksum must be set to 0 before checksum calculation
@@ -222,14 +239,14 @@ pub const IPv8Packet = struct {
         var acc: u32 = 0;
         var src: u16 = undefined;
         var octetIdx: usize = 0;
-        const headerLen = @as(usize, self.ihl) * 4;
+        const headerLen = As.usize(self.header.ihl) * 4;
         var len = headerLen;
 
         // dataptr may be at odd or even addresses
         while (len > 1) {
             // declare first octet as most significant
             // thus assume network order, ignoring host order
-            src = @as(u16, self.buffer[octetIdx]) << 8;
+            src = As.u16(self.buffer[octetIdx]) << 8;
             octetIdx += 1;
             // declare second octet as least significant
             src |= self.buffer[octetIdx];
@@ -240,7 +257,7 @@ pub const IPv8Packet = struct {
 
         if (len > 0) {
             // accumulate remaining octet
-            src = @as(u16, self.buffer[octetIdx]) << 8;
+            src = As.u16(self.buffer[octetIdx]) << 8;
             acc += src;
         }
 
@@ -250,29 +267,31 @@ pub const IPv8Packet = struct {
             acc = (acc >> 16) + (acc & 0x0000ffff);
         }
 
-        return ~@as(u16, @truncate(acc));
+        return ~As.u16T(acc);
     }
 
     pub fn print(self: *const IPv8Packet) void {
-        const s = self.src;
-        const d = self.dst;
+        const s = self.header.src;
+        const d = self.header.dst;
         std.debug.print("{s}", .{"IPv8Packet{\n"});
-        std.debug.print("    .version = {d},\n", .{self.version});
-        std.debug.print("    .ihl = {d},\n", .{self.ihl});
-        std.debug.print("    .tos = {d},\n", .{self.tos});
-        std.debug.print("    .totalLength = {d},\n", .{self.totalLength});
-        std.debug.print("    .identification = {d},\n", .{self.identification});
-        std.debug.print("    .flags = {b:0>3},\n", .{self.flags});
-        std.debug.print("    .fragmentOffset = {d},\n", .{self.fragmentOffset});
-        std.debug.print("    .ttl = {d},\n", .{self.ttl});
-        std.debug.print("    .protocol = {d},\n", .{self.protocol});
-        std.debug.print("    .checksum = {d},\n", .{self.checksum});
-        std.debug.print("    .src = {d}.{d}.{d}.{d}.{d}.{d}.{d}.{d},\n", .{
+        std.debug.print("    .header = {s}", .{"IPv8Header{\n"});
+        std.debug.print("        .version = {d},\n", .{self.header.version});
+        std.debug.print("        .ihl = {d},\n", .{self.header.ihl});
+        std.debug.print("        .tos = {d},\n", .{self.header.tos});
+        std.debug.print("        .totalLength = {d},\n", .{self.header.totalLength});
+        std.debug.print("        .identification = {d},\n", .{self.header.identification});
+        std.debug.print("        .flags = {b:0>3},\n", .{self.header.flags});
+        std.debug.print("        .fragmentOffset = {d},\n", .{self.header.fragmentOffset});
+        std.debug.print("        .ttl = {d},\n", .{self.header.ttl});
+        std.debug.print("        .protocol = {d},\n", .{self.header.protocol});
+        std.debug.print("        .checksum = {d},\n", .{self.header.checksum});
+        std.debug.print("        .src = {d}.{d}.{d}.{d}.{d}.{d}.{d}.{d},\n", .{
             s[0],s[1],s[2],s[3],s[4],s[5],s[6],s[7]
         });
-        std.debug.print("    .dst = {d}.{d}.{d}.{d}.{d}.{d}.{d}.{d},\n", .{
+        std.debug.print("        .dst = {d}.{d}.{d}.{d}.{d}.{d}.{d}.{d},\n", .{
             d[0],d[1],d[2],d[3],d[4],d[5],d[6],d[7]
         });
+        std.debug.print("{s}", .{"    }\n"});
         std.debug.print("    .payload = {s}\n", .{self.payload});
         std.debug.print("{s}", .{"}\n"});
     }
@@ -352,11 +371,14 @@ pub const IPv8Server = struct {
                 }
             };
 
-            if (packet.version == 8 or packet.flags & 0b100 == 0b100) {
+            if (packet.header.version == 8 or packet.header.flags & 0b100 == 0b100) {
                 {var i: u32 = 0; while (i < self.listeners.len) : (i += 1) {
                     const listener = self.listeners.get(i);
-                    if (addrEql(packet.dst, listener.addr)) {
-                        listener.handler(packet);
+                    if (addrEql(packet.header.dst, listener.addr)) {
+                        const isUDP = packet.header.protocol == Protocol.UDP;
+                        if (listener.port == 0 or (isUDP and (try UDP.UDPPacket.fromBuffer(packet.payload)).dstPort == listener.port)) {
+                            listener.handler(packet);    
+                        }
                     }
                 }}
             }
