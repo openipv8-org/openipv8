@@ -1,7 +1,8 @@
 Internet Area Working Group                                     J. Thain
 Internet-Draft                                               One Limited
-Intended status: Standards Track                         7 November 2026
-Expires: 11 May 2027
+Intended status: Standards Track                            A. Aleinikov
+Expires: 11 May 2027                                       Open-IPv8-Lab
+                                                         7 November 2026
 
 
                      IPv8 Zone Server Architecture
@@ -48,8 +49,7 @@ Status of This Memo
 
 
 
-
-Thain                      Expires 11 May 2027                  [Page 1]
+Thain & Aleinikov          Expires 11 May 2027                  [Page 1]
 
 
 Internet-Draft              IPv8 Zone Server               November 2026
@@ -106,7 +106,7 @@ Table of Contents
 
 
 
-Thain                      Expires 11 May 2027                  [Page 2]
+Thain & Aleinikov          Expires 11 May 2027                  [Page 2]
 
 
 Internet-Draft              IPv8 Zone Server               November 2026
@@ -135,7 +135,7 @@ Internet-Draft              IPv8 Zone Server               November 2026
    17. Open Issues . . . . . . . . . . . . . . . . . . . . . . . . .  27
    18. Normative References  . . . . . . . . . . . . . . . . . . . .  28
    19. Informative References  . . . . . . . . . . . . . . . . . . .  29
-   Author's Address  . . . . . . . . . . . . . . . . . . . . . . . .  31
+   Authors' Addresses  . . . . . . . . . . . . . . . . . . . . . . .  31
 
 1.  Introduction
 
@@ -163,7 +163,7 @@ Internet-Draft              IPv8 Zone Server               November 2026
 
 
 
-Thain                      Expires 11 May 2027                  [Page 3]
+Thain & Aleinikov          Expires 11 May 2027                  [Page 3]
 
 
 Internet-Draft              IPv8 Zone Server               November 2026
@@ -220,7 +220,7 @@ Internet-Draft              IPv8 Zone Server               November 2026
 
 
 
-Thain                      Expires 11 May 2027                  [Page 4]
+Thain & Aleinikov          Expires 11 May 2027                  [Page 4]
 
 
 Internet-Draft              IPv8 Zone Server               November 2026
@@ -277,7 +277,7 @@ Internet-Draft              IPv8 Zone Server               November 2026
 
 
 
-Thain                      Expires 11 May 2027                  [Page 5]
+Thain & Aleinikov          Expires 11 May 2027                  [Page 5]
 
 
 Internet-Draft              IPv8 Zone Server               November 2026
@@ -334,7 +334,7 @@ Internet-Draft              IPv8 Zone Server               November 2026
 
 
 
-Thain                      Expires 11 May 2027                  [Page 6]
+Thain & Aleinikov          Expires 11 May 2027                  [Page 6]
 
 
 Internet-Draft              IPv8 Zone Server               November 2026
@@ -391,7 +391,7 @@ Internet-Draft              IPv8 Zone Server               November 2026
 
 
 
-Thain                      Expires 11 May 2027                  [Page 7]
+Thain & Aleinikov          Expires 11 May 2027                  [Page 7]
 
 
 Internet-Draft              IPv8 Zone Server               November 2026
@@ -448,7 +448,7 @@ Internet-Draft              IPv8 Zone Server               November 2026
 
 
 
-Thain                      Expires 11 May 2027                  [Page 8]
+Thain & Aleinikov          Expires 11 May 2027                  [Page 8]
 
 
 Internet-Draft              IPv8 Zone Server               November 2026
@@ -505,7 +505,7 @@ Internet-Draft              IPv8 Zone Server               November 2026
 
 
 
-Thain                      Expires 11 May 2027                  [Page 9]
+Thain & Aleinikov          Expires 11 May 2027                  [Page 9]
 
 
 Internet-Draft              IPv8 Zone Server               November 2026
@@ -562,7 +562,7 @@ Internet-Draft              IPv8 Zone Server               November 2026
 
 
 
-Thain                      Expires 11 May 2027                 [Page 10]
+Thain & Aleinikov          Expires 11 May 2027                 [Page 10]
 
 
 Internet-Draft              IPv8 Zone Server               November 2026
@@ -619,7 +619,7 @@ Internet-Draft              IPv8 Zone Server               November 2026
 
 
 
-Thain                      Expires 11 May 2027                 [Page 11]
+Thain & Aleinikov          Expires 11 May 2027                 [Page 11]
 
 
 Internet-Draft              IPv8 Zone Server               November 2026
@@ -676,7 +676,7 @@ Internet-Draft              IPv8 Zone Server               November 2026
 
 
 
-Thain                      Expires 11 May 2027                 [Page 12]
+Thain & Aleinikov          Expires 11 May 2027                 [Page 12]
 
 
 Internet-Draft              IPv8 Zone Server               November 2026
@@ -733,7 +733,7 @@ Internet-Draft              IPv8 Zone Server               November 2026
 
 
 
-Thain                      Expires 11 May 2027                 [Page 13]
+Thain & Aleinikov          Expires 11 May 2027                 [Page 13]
 
 
 Internet-Draft              IPv8 Zone Server               November 2026
@@ -790,7 +790,7 @@ Internet-Draft              IPv8 Zone Server               November 2026
 
 
 
-Thain                      Expires 11 May 2027                 [Page 14]
+Thain & Aleinikov          Expires 11 May 2027                 [Page 14]
 
 
 Internet-Draft              IPv8 Zone Server               November 2026
@@ -847,7 +847,7 @@ Internet-Draft              IPv8 Zone Server               November 2026
 
 
 
-Thain                      Expires 11 May 2027                 [Page 15]
+Thain & Aleinikov          Expires 11 May 2027                 [Page 15]
 
 
 Internet-Draft              IPv8 Zone Server               November 2026
@@ -904,7 +904,7 @@ Internet-Draft              IPv8 Zone Server               November 2026
 
 
 
-Thain                      Expires 11 May 2027                 [Page 16]
+Thain & Aleinikov          Expires 11 May 2027                 [Page 16]
 
 
 Internet-Draft              IPv8 Zone Server               November 2026
@@ -961,7 +961,7 @@ Internet-Draft              IPv8 Zone Server               November 2026
 
 
 
-Thain                      Expires 11 May 2027                 [Page 17]
+Thain & Aleinikov          Expires 11 May 2027                 [Page 17]
 
 
 Internet-Draft              IPv8 Zone Server               November 2026
@@ -1018,7 +1018,7 @@ Internet-Draft              IPv8 Zone Server               November 2026
 
 
 
-Thain                      Expires 11 May 2027                 [Page 18]
+Thain & Aleinikov          Expires 11 May 2027                 [Page 18]
 
 
 Internet-Draft              IPv8 Zone Server               November 2026
@@ -1075,7 +1075,7 @@ Internet-Draft              IPv8 Zone Server               November 2026
 
 
 
-Thain                      Expires 11 May 2027                 [Page 19]
+Thain & Aleinikov          Expires 11 May 2027                 [Page 19]
 
 
 Internet-Draft              IPv8 Zone Server               November 2026
@@ -1132,7 +1132,7 @@ Internet-Draft              IPv8 Zone Server               November 2026
 
 
 
-Thain                      Expires 11 May 2027                 [Page 20]
+Thain & Aleinikov          Expires 11 May 2027                 [Page 20]
 
 
 Internet-Draft              IPv8 Zone Server               November 2026
@@ -1189,7 +1189,7 @@ Internet-Draft              IPv8 Zone Server               November 2026
 
 
 
-Thain                      Expires 11 May 2027                 [Page 21]
+Thain & Aleinikov          Expires 11 May 2027                 [Page 21]
 
 
 Internet-Draft              IPv8 Zone Server               November 2026
@@ -1246,7 +1246,7 @@ Internet-Draft              IPv8 Zone Server               November 2026
 
 
 
-Thain                      Expires 11 May 2027                 [Page 22]
+Thain & Aleinikov          Expires 11 May 2027                 [Page 22]
 
 
 Internet-Draft              IPv8 Zone Server               November 2026
@@ -1303,7 +1303,7 @@ Internet-Draft              IPv8 Zone Server               November 2026
 
 
 
-Thain                      Expires 11 May 2027                 [Page 23]
+Thain & Aleinikov          Expires 11 May 2027                 [Page 23]
 
 
 Internet-Draft              IPv8 Zone Server               November 2026
@@ -1360,7 +1360,7 @@ Internet-Draft              IPv8 Zone Server               November 2026
 
 
 
-Thain                      Expires 11 May 2027                 [Page 24]
+Thain & Aleinikov          Expires 11 May 2027                 [Page 24]
 
 
 Internet-Draft              IPv8 Zone Server               November 2026
@@ -1417,7 +1417,7 @@ Internet-Draft              IPv8 Zone Server               November 2026
 
 
 
-Thain                      Expires 11 May 2027                 [Page 25]
+Thain & Aleinikov          Expires 11 May 2027                 [Page 25]
 
 
 Internet-Draft              IPv8 Zone Server               November 2026
@@ -1474,7 +1474,7 @@ Internet-Draft              IPv8 Zone Server               November 2026
 
 
 
-Thain                      Expires 11 May 2027                 [Page 26]
+Thain & Aleinikov          Expires 11 May 2027                 [Page 26]
 
 
 Internet-Draft              IPv8 Zone Server               November 2026
@@ -1531,7 +1531,7 @@ Internet-Draft              IPv8 Zone Server               November 2026
 
 
 
-Thain                      Expires 11 May 2027                 [Page 27]
+Thain & Aleinikov          Expires 11 May 2027                 [Page 27]
 
 
 Internet-Draft              IPv8 Zone Server               November 2026
@@ -1588,7 +1588,7 @@ Internet-Draft              IPv8 Zone Server               November 2026
 
 
 
-Thain                      Expires 11 May 2027                 [Page 28]
+Thain & Aleinikov          Expires 11 May 2027                 [Page 28]
 
 
 Internet-Draft              IPv8 Zone Server               November 2026
@@ -1645,7 +1645,7 @@ Internet-Draft              IPv8 Zone Server               November 2026
 
 
 
-Thain                      Expires 11 May 2027                 [Page 29]
+Thain & Aleinikov          Expires 11 May 2027                 [Page 29]
 
 
 Internet-Draft              IPv8 Zone Server               November 2026
@@ -1702,7 +1702,7 @@ Internet-Draft              IPv8 Zone Server               November 2026
 
 
 
-Thain                      Expires 11 May 2027                 [Page 30]
+Thain & Aleinikov          Expires 11 May 2027                 [Page 30]
 
 
 Internet-Draft              IPv8 Zone Server               November 2026
@@ -1726,13 +1726,13 @@ Internet-Draft              IPv8 Zone Server               November 2026
               <https://www.rfc-editor.org/rfc/rfc7942>.
 
    [ROUTING-PROTOCOLS]
-              Thain, J., "IPv8 Routing Protocols: BGP8, IBGP8, OSPF8,
-              IS-IS8", Work in Progress, Internet-Draft, draft-thain-
-              routing-protocols-00, November 2026,
+              Thain, J. and A. Aleinikov, "IPv8 Routing Protocols:
+              BGP8, IBGP8, OSPF8, IS-IS8", Work in Progress, Internet-
+              Draft, draft-thain-routing-protocols-00, November 2026,
               <https://datatracker.ietf.org/doc/html/draft-thain-
               routing-protocols-00>.
 
-Author's Address
+Authors' Addresses
 
    Jamie Thain
    One Limited
@@ -1740,6 +1740,9 @@ Author's Address
    Bermuda
    Email: jamie@one.bm
 
+   Aleksei Aleinikov
+   Open-IPv8-Lab
+   Email: contact@alekseialeinikov.com
 
 
 
@@ -1756,7 +1759,4 @@ Author's Address
 
 
 
-
-
-
-Thain                      Expires 11 May 2027                 [Page 31]
+Thain & Aleinikov          Expires 11 May 2027                 [Page 31]
