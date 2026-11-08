@@ -25,6 +25,14 @@ organization = "One Limited"
   city = "Hamilton"
   country = "Bermuda"
 
+[[author]]
+initials = "A."
+surname = "Aleinikov"
+fullname = "Aleksei Aleinikov"
+organization = "Open-IPv8-Lab"
+  [author.address]
+  email = "contact@alekseialeinikov.com"
+
 %%%
 
 # Abstract
@@ -2102,6 +2110,7 @@ forwarding table.
 <reference anchor="ZONESERVER">
   <front><title>IPv8 Zone Server Architecture</title>
   <author initials="J." surname="Thain" fullname="Jamie Thain"/>
+  <author initials="A." surname="Aleinikov" fullname="Aleksei Aleinikov"/>
   <date year="2026" month="April"/></front>
   <seriesInfo name="Internet-Draft" value="draft-thain-zoneserver-00"/>
 </reference>

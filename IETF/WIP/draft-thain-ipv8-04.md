@@ -2769,6 +2769,7 @@ range pending permanent IANA assignment.
 <reference anchor="ROUTING-PROTOCOLS">
   <front><title>IPv8 Routing Protocols: BGP8, IBGP8, OSPF8, IS-IS8</title>
   <author initials="J." surname="Thain" fullname="Jamie Thain"/>
+  <author initials="A." surname="Aleinikov" fullname="Aleksei Aleinikov"/>
   <date year="2026" month="May"/></front>
   <seriesInfo name="Internet-Draft" value="draft-thain-routing-protocols-00"/>
 </reference>
@@ -2783,6 +2784,7 @@ range pending permanent IANA assignment.
 <reference anchor="ZONESERVER">
   <front><title>Zone Server Architecture</title>
   <author initials="J." surname="Thain" fullname="Jamie Thain"/>
+  <author initials="A." surname="Aleinikov" fullname="Aleksei Aleinikov"/>
   <date year="2026" month="May"/></front>
   <seriesInfo name="Internet-Draft" value="draft-thain-zoneserver-00"/>
 </reference>

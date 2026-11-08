@@ -1845,6 +1845,7 @@ above per [@NETLOG8].
   <front>
     <title>IPv8 Zone Server Architecture</title>
     <author initials="J." surname="Thain" fullname="Jamie Thain"/>
+    <author initials="A." surname="Aleinikov" fullname="Aleksei Aleinikov"/>
     <date year="2026" month="May"/>
   </front>
   <seriesInfo name="Internet-Draft" value="draft-thain-zoneserver-00"/>
@@ -1911,6 +1912,7 @@ above per [@NETLOG8].
   <front>
     <title>IPv8 Routing Protocols: BGP8, IBGP8, OSPF8, IS-IS8</title>
     <author initials="J." surname="Thain" fullname="Jamie Thain"/>
+    <author initials="A." surname="Aleinikov" fullname="Aleksei Aleinikov"/>
     <date year="2026" month="May"/>
   </front>
   <seriesInfo name="Internet-Draft" value="draft-thain-routing-protocols-00"/>
