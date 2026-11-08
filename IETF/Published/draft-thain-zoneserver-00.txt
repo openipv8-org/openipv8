@@ -1,0 +1,1762 @@
+Internet Area Working Group                                     J. Thain
+Internet-Draft                                               One Limited
+Intended status: Standards Track                         7 November 2026
+Expires: 11 May 2027
+
+
+                     IPv8 Zone Server Architecture
+                       draft-thain-zoneserver-00
+
+Abstract
+
+   This document specifies the Zone Server, the network-services
+   appliance at which an Internet Protocol Version 8 (IPv8) [IPv8]
+   network meets the rest of the world.  A Zone Server is commodity
+   Linux hardware running the IPv8 kernel forwarding stack and a
+   userspace platform.  It is deployed as an active-active pair at .254
+   (even) and .253 (odd) on every segment it serves, and is the Provider
+   Edge for the operator's Route Numbers.
+
+   The Zone Server provides XLATE8, the per-flow translation engine
+   through which traffic crosses between IPv4 and IPv8 and between route
+   spaces; DHCP8 and DNS8 servers, including the DNS8 handle mechanism
+   by which IPv4-only hosts reach other Route Numbers; OAuth8, which
+   admits hosts into Route Numbers by signed identity rather than by
+   port; ACL8 policy authority; encrypted WireGuard tunnels between
+   sites, to clients and for management; and a single configuration
+   surface over the routing, firewall, time, discovery and bridging
+   daemons it orchestrates.  This document specifies each of these
+   functions, the synchronisation of the pair, and the Zone Server's own
+   security posture.
+
+Status of This Memo
+
+   This Internet-Draft is submitted in full conformance with the
+   provisions of BCP 78 and BCP 79.
+
+   Internet-Drafts are working documents of the Internet Engineering
+   Task Force (IETF).  Note that other groups may also distribute
+   working documents as Internet-Drafts.  The list of current Internet-
+   Drafts is at https://datatracker.ietf.org/drafts/current/.
+
+   Internet-Drafts are draft documents valid for a maximum of six months
+   and may be updated, replaced, or obsoleted by other documents at any
+   time.  It is inappropriate to use Internet-Drafts as reference
+   material or to cite them other than as "work in progress."
+
+   This Internet-Draft will expire on 11 May 2027.
+
+
+
+
+Thain                      Expires 11 May 2027                  [Page 1]
+
+
+Internet-Draft              IPv8 Zone Server               November 2026
+
+
+Copyright Notice
+
+   Copyright (c) 2026 IETF Trust and the persons identified as the
+   document authors.  All rights reserved.
+
+   This document is subject to BCP 78 and the IETF Trust's Legal
+   Provisions Relating to IETF Documents (https://trustee.ietf.org/
+   license-info) in effect on the date of publication of this document.
+   Please review these documents carefully, as they describe your rights
+   and restrictions with respect to this document.  Code Components
+   extracted from this document must include Revised BSD License text as
+   described in Section 4.e of the Trust Legal Provisions and are
+   provided without warranty as described in the Revised BSD License.
+
+Table of Contents
+
+   1.  Introduction  . . . . . . . . . . . . . . . . . . . . . . . .   3
+     1.1.  Requirements Language . . . . . . . . . . . . . . . . . .   4
+   2.  Terminology . . . . . . . . . . . . . . . . . . . . . . . . .   4
+   3.  Architecture  . . . . . . . . . . . . . . . . . . . . . . . .   5
+     3.1.  Position in the Network . . . . . . . . . . . . . . . . .   6
+     3.2.  Components  . . . . . . . . . . . . . . . . . . . . . . .   6
+     3.3.  Interfaces and Legs . . . . . . . . . . . . . . . . . . .   7
+     3.4.  Service Set . . . . . . . . . . . . . . . . . . . . . . .   8
+   4.  The Zone Server Pair  . . . . . . . . . . . . . . . . . . . .   9
+     4.1.  Addressing  . . . . . . . . . . . . . . . . . . . . . . .   9
+     4.2.  Active-Active Operation . . . . . . . . . . . . . . . . .   9
+     4.3.  Synchronisation . . . . . . . . . . . . . . . . . . . . .   9
+     4.4.  Scaling Beyond One Pair . . . . . . . . . . . . . . . . .  10
+   5.  XLATE8  . . . . . . . . . . . . . . . . . . . . . . . . . . .  11
+     5.1.  Overview  . . . . . . . . . . . . . . . . . . . . . . . .  11
+     5.2.  State Table . . . . . . . . . . . . . . . . . . . . . . .  11
+     5.3.  Native Forwarding . . . . . . . . . . . . . . . . . . . .  12
+     5.4.  4-to-8: IPv4-only Hosts and Handles . . . . . . . . . . .  12
+     5.5.  8-to-4: Route Number 0  . . . . . . . . . . . . . . . . .  14
+     5.6.  8-to-8: Between Route Numbers . . . . . . . . . . . . . .  14
+     5.7.  Inter-Organisation Connection: Two XLATE8s  . . . . . . .  14
+     5.8.  8-over-IPv4 . . . . . . . . . . . . . . . . . . . . . . .  15
+     5.9.  Composition with Even/Odd . . . . . . . . . . . . . . . .  15
+   6.  DHCP8 Server  . . . . . . . . . . . . . . . . . . . . . . . .  16
+   7.  DNS8 Server . . . . . . . . . . . . . . . . . . . . . . . . .  17
+     7.1.  Roles . . . . . . . . . . . . . . . . . . . . . . . . . .  17
+     7.2.  Answers by Client Type  . . . . . . . . . . . . . . . . .  17
+     7.3.  Strict Mode: DNS Authorisation  . . . . . . . . . . . . .  18
+     7.4.  Publication . . . . . . . . . . . . . . . . . . . . . . .  18
+     7.5.  Availability Tracking . . . . . . . . . . . . . . . . . .  18
+   8.  OAuth8 and Admission  . . . . . . . . . . . . . . . . . . . .  18
+     8.1.  OAuth8 Server . . . . . . . . . . . . . . . . . . . . . .  18
+
+
+
+Thain                      Expires 11 May 2027                  [Page 2]
+
+
+Internet-Draft              IPv8 Zone Server               November 2026
+
+
+     8.2.  Token Claims  . . . . . . . . . . . . . . . . . . . . . .  19
+     8.3.  Admission Flow  . . . . . . . . . . . . . . . . . . . . .  20
+     8.4.  Session Lifecycle and Revocation  . . . . . . . . . . . .  20
+   9.  Interface Modes on the Zone Server  . . . . . . . . . . . . .  21
+   10. ACL8 Authority  . . . . . . . . . . . . . . . . . . . . . . .  21
+     10.1.  Policy Distribution  . . . . . . . . . . . . . . . . . .  22
+     10.2.  Protecting the Zone Server Itself  . . . . . . . . . . .  22
+   11. Tunnels . . . . . . . . . . . . . . . . . . . . . . . . . . .  22
+     11.1.  WireGuard on the Zone Server . . . . . . . . . . . . . .  22
+     11.2.  Site to Site . . . . . . . . . . . . . . . . . . . . . .  22
+     11.3.  Client Tunnels . . . . . . . . . . . . . . . . . . . . .  23
+     11.4.  Management Tunnels . . . . . . . . . . . . . . . . . . .  23
+   12. Configuration and Management  . . . . . . . . . . . . . . . .  23
+     12.1.  One Configuration Surface  . . . . . . . . . . . . . . .  23
+     12.2.  Validation at Commit . . . . . . . . . . . . . . . . . .  24
+     12.3.  Upgrades . . . . . . . . . . . . . . . . . . . . . . . .  25
+   13. Telemetry and Ancillary Services  . . . . . . . . . . . . . .  25
+   14. Implementation Status . . . . . . . . . . . . . . . . . . . .  25
+   15. Security Considerations . . . . . . . . . . . . . . . . . . .  26
+   16. IANA Considerations . . . . . . . . . . . . . . . . . . . . .  27
+   17. Open Issues . . . . . . . . . . . . . . . . . . . . . . . . .  27
+   18. Normative References  . . . . . . . . . . . . . . . . . . . .  28
+   19. Informative References  . . . . . . . . . . . . . . . . . . .  29
+   Author's Address  . . . . . . . . . . . . . . . . . . . . . . . .  31
+
+1.  Introduction
+
+   IPv8 [IPv8] prepends a 32-bit Route Number (RN) to each IPv4 address
+   and carries it in an 8-octet shim in front of an unmodified IPv4
+   packet.  The core document places one device at the edge of every
+   IPv8 deployment: the Zone Server.  Routers inside the network forward
+   IPv4 as they do today; the Zone Server is where Route Numbers are
+   attached, removed, translated, resolved and authorised.
+
+   The core document and the support protocols [SUPPORT8] define what
+   crosses the wire and how a router forwards it.  This document defines
+   the appliance: what a Zone Server runs, how a pair of them shares one
+   segment, how traffic is translated at the boundaries, how hosts are
+   given addresses, names and Route Numbers, how identity decides which
+   Route Number a host is in, and how the appliance is configured and
+   protected.
+
+   A Zone Server is a software product.  It runs on standard x86 or ARM
+   server hardware with standard network interfaces, or as a cloud
+   compute instance, and requires no specialised forwarding silicon.
+   Deploying IPv8 in an Autonomous System is adding a Zone Server pair
+   at each Provider Edge site ([IPv8], Typical Deployment Pattern).
+
+
+
+
+Thain                      Expires 11 May 2027                  [Page 3]
+
+
+Internet-Draft              IPv8 Zone Server               November 2026
+
+
+   This document forms part of a companion specification suite.
+   Released with this document:
+
+   *  draft-thain-ipv8-04 Core protocol
+
+   *  draft-thain-support8-00 ARP8, ICMPv8, Route8, ACL8, DNS8
+
+   *  draft-thain-routing-protocols-00 BGP8, BGP8x, IBGP8, OSPF8, IS-
+      IS8, CF
+
+   *  draft-thain-zoneserver-00 Zone Server Architecture (this document)
+
+   Work in progress, not yet released:
+
+   *  draft-thain-rine-00 Regional Inter-Network Exchange
+
+   *  draft-thain-netlog8-00 NetLog8 Protocol
+
+   *  draft-thain-ipv8-mib-00 IPv8 MIB and SNMPv8
+
+   *  draft-thain-wifi8-00 WiFi8 Protocol
+
+   *  draft-thain-update8-00 Update8 and NIC Certification
+
+1.1.  Requirements Language
+
+   The key words "MUST", "MUST NOT", "REQUIRED", "SHALL", "SHALL NOT",
+   "SHOULD", "SHOULD NOT", "RECOMMENDED", "NOT RECOMMENDED", "MAY", and
+   "OPTIONAL" in this document are to be interpreted as described in BCP
+   14 [RFC2119] [RFC8174] when, and only when, they appear in all
+   capitals, as shown here.
+
+   Command syntax shown in this document is illustrative.  Vendors are
+   free to implement any command nomenclature consistent with their
+   platform conventions; the requirement is that the functionality
+   exists and the underlying behaviour conforms to this document.
+
+   Examples use Route Numbers from the documentation ASN range
+   [RFC5398], IPv4 addresses from the documentation ranges [RFC5737] for
+   public addresses, and [RFC1918] addresses for Local Addresses inside
+   a Route Number.
+
+2.  Terminology
+
+   Terms defined in [IPv8] and [SUPPORT8] (Route Number, Local Address,
+   shim, 8-over-4, route spaces, Route8, ACL8, DNS8, A8 record, ZS
+   record) are used as defined there.  In addition:
+
+
+
+
+Thain                      Expires 11 May 2027                  [Page 4]
+
+
+Internet-Draft              IPv8 Zone Server               November 2026
+
+
+   *Zone Server.* A device that implements this document: the IPv8
+   kernel forwarding stack, XLATE8, the DHCP8, DNS8 and OAuth8 servers,
+   ACL8 policy authority, and the configuration surface over its
+   orchestrated daemons.
+
+   *Zone Server pair.* The two Zone Servers serving one segment, at
+   Local Addresses .254 (even) and .253 (odd) of that segment's subnet,
+   operating active-active.
+
+   *Leg.* A Zone Server interface by role.  The *anycast leg* faces the
+   IPv4 Internet and terminates the Route Number's anycast ingress
+   prefix and 8-over-4.  The *native leg* carries the operator's IPv8
+   VRF (ipv8-<RN>) or native IPv8 segments.  The *management port*
+   carries management only.
+
+   *Inside and outside.* Every interface is inside unless it is
+   explicitly declared outside ([IPv8], Route Space Protection).
+   Traffic leaves through an outside interface only after NAT.
+
+   *XLATE8 entry.* One row of the XLATE8 state table, describing one
+   translated flow in both directions.
+
+   *Handle.* An address from 198.18.0.0/15 [RFC2544] returned by DNS8 to
+   an IPv4-only client in place of a destination in another Route Number
+   ([IPv8], DNS8 Handles).
+
+   *Handle binding.* The association of one client, as the Zone Server
+   sees it, and one handle with one destination <RN>-<LA>.
+
+   *Holding Route Number.* A guest Route Number in 127.255.r.r in which
+   a host that has not authenticated is confined ([IPv8], Identity-
+   Driven Access Control).
+
+   *OAuth8.* The Zone Server's OAuth 2.0 [RFC6749] authorization server,
+   which issues the JSON Web Tokens [RFC7519] that decide a host's Route
+   Number, mode and declared policy.
+
+   *Synchronisation channel.* The authenticated, encrypted link between
+   the two members of a Zone Server pair over which they share state
+   (Section 4.3).
+
+3.  Architecture
+
+
+
+
+
+
+
+
+
+Thain                      Expires 11 May 2027                  [Page 5]
+
+
+Internet-Draft              IPv8 Zone Server               November 2026
+
+
+3.1.  Position in the Network
+
+   A Zone Server sits where an IPv8 network meets something that is not
+   the same IPv8 network: the IPv4 Internet, another Route Number,
+   another route space, another site, or an IPv4-only host.  It is the
+   Provider Edge for the operator's Route Numbers ([IPv8], An RN is a
+   Remote VRF): routers between Zone Servers carry ordinary IPv4 inside
+   ipv8-<RN> VRFs, and the Zone Server turns that IPv4 into IPv8 and
+   back.
+
+   IPv4 Internet         operator network            hosts
+        |                                              |
+    anycast leg                                   segments
+    8-over-4        +---------------------+    .254 even
+        +-----------|  Zone Server (even) |----+  .253 odd
+        |           +---------------------+    |
+        |                 | sync channel       |
+        |           +---------------------+    |
+        +-----------|  Zone Server (odd)  |----+
+                    +---------------------+
+                      |  native leg
+                      |  ipv8-<RN> VRF / native IPv8
+                  operator's routers (IPv4, unchanged)
+
+3.2.  Components
+
+   A Zone Server consists of the IPv8 kernel forwarding stack
+   ([SUPPORT8]) and a userspace platform.  The platform implements some
+   services itself and orchestrates established open-source daemons for
+   the rest.  It presents one configuration surface and renders each
+   daemon's configuration from it; the operator does not edit daemon
+   configuration files.
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+Thain                      Expires 11 May 2027                  [Page 6]
+
+
+Internet-Draft              IPv8 Zone Server               November 2026
+
+
+           +========================+==========================+
+           | Function               | Provided by              |
+           +========================+==========================+
+           | Forwarding, Route8,    | IPv8 kernel stack        |
+           | ARP8, XLATE8 data path |                          |
+           +------------------------+--------------------------+
+           | XLATE8 state and       | Zone Server platform     |
+           | policy                 |                          |
+           +------------------------+--------------------------+
+           | DHCP8 server           | Zone Server platform     |
+           +------------------------+--------------------------+
+           | DNS8 server            | Zone Server platform     |
+           +------------------------+--------------------------+
+           | OAuth8 server          | Zone Server platform     |
+           +------------------------+--------------------------+
+           | ACL8 compilation       | Zone Server platform,    |
+           |                        | rendered to nftables     |
+           +------------------------+--------------------------+
+           | BGP8, OSPF8, IS-IS8    | FRR with IPv8 extensions |
+           |                        | [ROUTING-PROTOCOLS]      |
+           +------------------------+--------------------------+
+           | NTP                    | chrony                   |
+           +------------------------+--------------------------+
+           | LLDP                   | lldpd                    |
+           +------------------------+--------------------------+
+           | Spanning tree          | mstpd, where the Zone    |
+           |                        | Server bridges           |
+           +------------------------+--------------------------+
+           | Tunnels                | WireGuard [WIREGUARD]    |
+           +------------------------+--------------------------+
+           | Telemetry              | NetLog8 [NETLOG8]        |
+           +------------------------+--------------------------+
+
+                                  Table 1
+
+   The daemon names identify the reference implementation and are not
+   normative.  An implementation MAY substitute any component that
+   provides the same function and behaviour.
+
+3.3.  Interfaces and Legs
+
+   The reference deployment gives each Zone Server two 10 GbE interfaces
+   toward the AS's IPv8 edge router, an anycast leg and a native leg,
+   and a dedicated management port ([IPv8], Physical Layout).  Larger
+   deployments MAY bond legs for capacity or separate them further; the
+   two legs and the management port are the operational minimum.
+
+
+
+
+
+Thain                      Expires 11 May 2027                  [Page 7]
+
+
+Internet-Draft              IPv8 Zone Server               November 2026
+
+
+   *  The *anycast leg* announces the Route Number's anycast ingress
+      prefix by default ([SUPPORT8], ZS Record and the Anycast Record),
+      receives 8-over-4, removes the outer header and dispatches the
+      inner IPv8 packet.  It faces the public Internet and is protected
+      by ACL8 (Section 10.2).
+
+   *  The *native leg* carries the operator's ipv8-<RN> VRF or native
+      IPv8 and connects to the operator's routing fabric.
+
+   *  *Segment interfaces* (physical, 802.1Q subinterfaces or SVIs)
+      serve hosts.  Each carries exactly one Primary Route Number
+      ([IPv8], Per-Segment RN Invariant), and on each the pair holds
+      .254 and .253.
+
+   *  The *management port* is a routed port in the management table
+      (Mgmt-vrf by convention), never a switch port ([SUPPORT8],
+      Management Plane).
+
+   *  *Tunnel interfaces* carry WireGuard tunnels (Section 11).
+
+   Any interface MAY be declared outside.  An outside interface is where
+   NAT applies and where private Route Numbers stop ([IPv8], Route Space
+   Protection).
+
+3.4.  Service Set
+
+   Three services are the minimum for a Zone Server to operate, and an
+   implementation MUST NOT allow the anycast leg to come up without
+   them:
+
+   *  *ACL8*, which protects the Zone Server itself and enforces policy
+      (Section 10).  A Zone Server without ACL8 is an unprotected Linux
+      host on the public Internet.
+
+   *  *XLATE8*, translation between IPv4 and IPv8 and between Route
+      Numbers (Section 5).
+
+   *  *DNS8*, resolution, the handle mechanism and the publication of
+      the Route Number's ZS and anycast records (Section 7).
+
+   OAuth8 is implicit in this set: ACL8 evaluates claims that OAuth8
+   issues.  The remaining services layer on as the deployment requires:
+   DHCP8, NetLog8, NTP, LLDP coordination, multicast querier,
+   pseudowires and tunnels.
+
+
+
+
+
+
+
+Thain                      Expires 11 May 2027                  [Page 8]
+
+
+Internet-Draft              IPv8 Zone Server               November 2026
+
+
+4.  The Zone Server Pair
+
+4.1.  Addressing
+
+   Every IPv8 segment has two default gateways, the Zone Server pair, at
+   Local Address .254 (even) and .253 (odd) of the segment's subnet
+   ([SUPPORT8], Even/Odd Dual Default Gateway).  Hosts with an even
+   Local Address use .254 as active and .253 as failover; hosts with an
+   odd Local Address the reverse.  DHCP8 lists both gateways in the
+   Router option, the client's active gateway first.
+
+   For subnets other than a /24 the same rule applies to the two highest
+   usable host addresses: the higher is even and the lower is odd.  A
+   segment whose subnet is too small to hold both addresses (a /31 or
+   /32) is served by one Zone Server.
+
+4.2.  Active-Active Operation
+
+   Both members forward at all times.  TCP connections follow the even
+   or odd path chosen at establishment for their life; UDP follows the
+   source host's parity per datagram.  Where the two members have
+   different upstreams, the even path and the odd path are two
+   providers.
+
+   When one member fails the survivor takes both parities.  It answers
+   ARP and ARP8 for the failed member's gateway address and sends a
+   gratuitous ARP and gratuitous ARP8 for it, so hosts move without
+   waiting for their caches to expire.  At most two packets per flow are
+   lost on failover.  When the failed member returns it resumes its own
+   parity only after its state is synchronised (Section 4.3).
+
+   On a partition, when the members cannot see each other but both are
+   up, both deliberately take both parities and compete, rather than
+   running as two independent gateways each with half the state.  Each
+   continues to honour every binding and lease it holds, so no host is
+   renumbered by a partition.
+
+4.3.  Synchronisation
+
+   The two members of a pair share state over the synchronisation
+   channel so that either can serve every host on the segment without
+   re-authentication, renumbering or loss of established flows.  The
+   channel MUST be authenticated and encrypted, MUST NOT be routed
+   beyond the pair, and is reserved for the pair: inter-site exchange
+   uses BGP over tunnels ([IPv8], Inter-Site Interconnection), never
+   this channel.
+
+   The following state MUST be shared:
+
+
+
+Thain                      Expires 11 May 2027                  [Page 9]
+
+
+Internet-Draft              IPv8 Zone Server               November 2026
+
+
+       +====================+======================================+
+       | State              | Requirement                          |
+       +====================+======================================+
+       | DHCP8 leases       | Both members answer for every lease  |
+       +--------------------+--------------------------------------+
+       | DNS8 registrations | Identical answers from either member |
+       +--------------------+--------------------------------------+
+       | Handle bindings    | Same handle for the same client and  |
+       |                    | destination                          |
+       +--------------------+--------------------------------------+
+       | XLATE8 entries     | A flow survives failover             |
+       +--------------------+--------------------------------------+
+       | OAuth8 sessions    | A revoked token is refused by both   |
+       | and revocations    | before revocation is acknowledged    |
+       +--------------------+--------------------------------------+
+       | ACL8 compiled      | Identical enforcement                |
+       | policy             |                                      |
+       +--------------------+--------------------------------------+
+       | Configuration      | One configuration, committed to both |
+       +--------------------+--------------------------------------+
+
+                                  Table 2
+
+   Lease, registration, binding and session changes MUST be replicated
+   before they are relied on: a member does not hand out an address, a
+   handle or a Route Number binding that its peer does not yet hold,
+   unless the peer is unreachable.  XLATE8 entries for established flows
+   MAY be replicated in batches, at the cost of the packets in flight
+   when a member fails.
+
+   The wire format of the synchronisation channel is an implementation
+   matter in this revision.
+
+4.4.  Scaling Beyond One Pair
+
+   An operator scales horizontally by adding pairs at further Provider
+   Edge sites, each serving its own segments, or vertically with larger
+   hardware.  Pairs of one Route Number exchange reachability by iBGP
+   carried as VPNv4 by default ([IPv8], Typical Deployment Pattern).
+   Every Zone Server is a route reflector for its same-RN peers ([IPv8],
+   Inter-Site Interconnection).  Sizing guidance is in [IPv8], Capacity
+   Scaling.
+
+   At hyperscale a Zone Server MAY run as a cloud compute instance, with
+   redundancy from the platform's multi-availability-zone model rather
+   than from the paired-appliance pattern.  The synchronisation
+   requirements above then apply to whatever group of instances serves
+   one segment.
+
+
+
+Thain                      Expires 11 May 2027                 [Page 10]
+
+
+Internet-Draft              IPv8 Zone Server               November 2026
+
+
+5.  XLATE8
+
+5.1.  Overview
+
+   XLATE8 is the Zone Server's translation engine.  Routes never cross
+   the wall between route spaces; traffic crosses it only through
+   XLATE8, as a translation with per-flow state ([IPv8], Route Spaces).
+   XLATE8 has five modes over one state table:
+
+    +=============+===================================================+
+    | Mode        | Use                                               |
+    +=============+===================================================+
+    | Native      | IPv8 to IPv8, no translation, no state            |
+    +-------------+---------------------------------------------------+
+    | 4-to-8      | IPv4-only host to another Route Number, by handle |
+    +-------------+---------------------------------------------------+
+    | 8-to-4      | IPv8 to Route Number 0 (the IPv4 Internet)        |
+    +-------------+---------------------------------------------------+
+    | 8-to-8 NAPT | Between Route Numbers at a boundary               |
+    +-------------+---------------------------------------------------+
+    | 8-over-IPv4 | IPv8 carried across IPv4-only transit             |
+    +-------------+---------------------------------------------------+
+
+                                  Table 3
+
+   A flow MAY pass through more than one mode at one Zone Server: an
+   IPv4-only host in a private Route Number reaching another
+   organisation is 4-to-8 and then 8-to-8.  The modes are selected per
+   flow by position and policy; operators do not configure per-flow
+   translation rules.
+
+5.2.  State Table
+
+   An XLATE8 entry records one flow in both directions:
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+Thain                      Expires 11 May 2027                 [Page 11]
+
+
+Internet-Draft              IPv8 Zone Server               November 2026
+
+
+      +=================+==========================================+
+      | Field           | Content                                  |
+      +=================+==========================================+
+      | Inside endpoint | <RN>-<LA>, protocol, port (or ICMP       |
+      |                 | identifier) as the inside host sends     |
+      +-----------------+------------------------------------------+
+      | Outside         | <RN>-<LA>, port as the remote end sees   |
+      | endpoint        | it                                       |
+      +-----------------+------------------------------------------+
+      | Remote endpoint | <RN>-<LA>, port of the far end           |
+      +-----------------+------------------------------------------+
+      | Inside view of  | The address the inside host uses for the |
+      | remote          | far end (a handle, or the real address)  |
+      +-----------------+------------------------------------------+
+      | Interface       | The segment interface the flow belongs   |
+      |                 | to                                       |
+      +-----------------+------------------------------------------+
+      | Mode            | One or more of the five modes            |
+      +-----------------+------------------------------------------+
+      | Parity          | Even or odd member                       |
+      +-----------------+------------------------------------------+
+      | Expiry          | Idle timer per protocol                  |
+      +-----------------+------------------------------------------+
+
+                                 Table 4
+
+   Entries are created by the first packet of a flow, or for 4-to-8 by
+   the DNS8 answer that produced it (Section 5.4).  Idle timers follow
+   the NAT behavioural requirements: for UDP at least two minutes and by
+   default five minutes [RFC4787]; for established TCP at least two
+   hours and four minutes [RFC5382].  ICMP queries follow [RFC5508].
+
+5.3.  Native Forwarding
+
+   Traffic between IPv8 endpoints whose Route Numbers are reachable
+   without crossing a route-space wall is forwarded by Route8
+   ([SUPPORT8]) and creates no XLATE8 entry.  This is the common case
+   inside an operator's network and between IPv8 networks.
+
+5.4.  4-to-8: IPv4-only Hosts and Handles
+
+   An IPv4-only host addresses everything with a 32-bit address and
+   sends bare IPv4.  The only moment it expressed which Route Number it
+   meant is the DNS lookup before the packet, so the Route Number
+   attaches at DNS time.  The rules for which answer DNS8 gives are in
+   [IPv8], DNS8 Handles, and [SUPPORT8], Handles for IPv4-only Clients:
+   the real Local Address for a name in the client's own Route Number,
+   the real public address for Route Number 0, and a handle for any
+
+
+
+Thain                      Expires 11 May 2027                 [Page 12]
+
+
+Internet-Draft              IPv8 Zone Server               November 2026
+
+
+   other Route Number, every time.
+
+   When DNS8 returns a handle it creates the handle binding:
+
+   (interface, client as seen, handle) -> <RN>-<LA>
+
+   The client "as seen" is its source address as it arrives at the Zone
+   Server, which is the address of a legacy NAT where one sits in front
+   of the Zone Server.  Bindings are per interface; the pool on each
+   interface is the whole of 198.18.0.0/15, 131,072 handles.
+
+   When the client sends to the handle, the Zone Server:
+
+   1.  finds the binding for (interface, source, destination handle);
+       with no binding the packet is dropped and a NetLog8 event is
+       raised;
+
+   2.  replaces the destination handle with the bound Local Address;
+
+   3.  adds the shim with Source Route Number the Route Number of the
+       subnet holding the client's address ([IPv8], Per-Segment RN
+       Invariant) and Destination Route Number the bound Route Number;
+
+   4.  creates the XLATE8 entry and forwards by Route8.
+
+   A reply from <RN>-<LA> matches the entry; the Zone Server replaces
+   the source Local Address with the handle, removes the shim and
+   delivers bare IPv4 to the client.  No source port is translated,
+   because the client's own <RN>-<LA> is unique.
+
+   The binding is sticky: the same client asking for the same <RN>-<LA>
+   receives the same handle while the binding lives, and one client
+   never holds two bindings on one handle.  The TTL returned with a
+   handle is the TTL of the underlying A8 record.  A binding lives at
+   least until that TTL expires and then for as long as any XLATE8 entry
+   uses it; it then returns the handle to the pool.  Both members of the
+   pair hold every binding (Section 4.3).
+
+   The handle mechanism resembles DNS64 [RFC6147] with stateful NAT64
+   [RFC6146] in that the DNS answer is synthesised and the translator
+   holds the state; it differs in that the synthesised address is IPv4,
+   is chosen per client and per interface, and carries a Route Number
+   rather than an address family.
+
+
+
+
+
+
+
+
+Thain                      Expires 11 May 2027                 [Page 13]
+
+
+Internet-Draft              IPv8 Zone Server               November 2026
+
+
+5.5.  8-to-4: Route Number 0
+
+   A packet whose Destination Route Number is 0 is plain IPv4 ([IPv8],
+   IPv4-Compatible Form).  The Zone Server removes the shim and forwards
+   it by the main IPv4 table.
+
+   Where the packet leaves through an outside interface, NAT gives it
+   the outside interface's own address ([IPv8], Route Space Protection).
+   The XLATE8 entry records the originating Source Route Number, so that
+   the reply, which arrives as bare IPv4, is re-associated with it and
+   returned with the shim restored.  Mapping and filtering SHOULD be
+   endpoint-independent [RFC4787].  A packet MUST NOT leave an outside
+   interface with an untranslated inside source.
+
+   NAT zones MAY be layered (inside, NAT, a further zone, NAT, the
+   Internet); each zone is its own private space and each NAT boundary
+   is an XLATE8 boundary with its own entries.
+
+5.6.  8-to-8: Between Route Numbers
+
+   8-to-8 translation rewrites Route Number, Local Address and port
+   together at a boundary between Route Numbers, many to fewer, as NAPT
+   does for IPv4.  The Zone Server applies it in three cases.
+
+   *Private source leaving the site.* A Zone Server MUST translate a
+   Source Route Number in the private route space (127.r.r.r) to its own
+   public Route Number and one of its own Local Addresses before sending
+   the packet over a session on which that private Route Number has not
+   been agreed ([IPv8], Route Space Protection).  Otherwise the reply
+   carries a private Destination Route Number that cannot cross back.
+
+   *Scoped space to the Internet.* A scoped Route Number (222.r.r.r)
+   reaches the public space only up through NAT at an outside interface
+   ([IPv8], Route Spaces).
+
+   *Published services.* An operator MAY publish a service that lives in
+   a private Route Number under one of its public Route Number's
+   addresses.  The Zone Server holds a static binding from the public
+   <RN>-<LA> and port to the private one, and translates the destination
+   of inbound flows accordingly, as a static NAT or port forward does
+   for IPv4.
+
+5.7.  Inter-Organisation Connection: Two XLATE8s
+
+   Two organisations that each run their own private Route Numbers reach
+   each other through two translations, one at each edge, without either
+   learning the other's private space:
+
+
+
+
+Thain                      Expires 11 May 2027                 [Page 14]
+
+
+Internet-Draft              IPv8 Zone Server               November 2026
+
+
+   Org A host                     Org B service
+   127.1.1.1-10.0.0.5             127.9.9.9-10.0.0.7
+        |                                ^
+   A's Zone Server                  B's Zone Server
+   8-to-8: source to                8-to-8: destination from
+   64500-192.0.2.10                 64501-198.51.100.20
+        |                                |
+        +------------- public -----------+
+         64500-192.0.2.10 -> 64501-198.51.100.20
+
+   Organisation B publishes the service name with an A8 record in its
+   public Route Number.  Organisation A's Zone Server translates its
+   host's private source to A's public Route Number on the way out;
+   Organisation B's Zone Server translates the published public
+   destination to the private service on the way in.  Both organisations
+   go on using 10.0.0.0/8 in every private Route Number they have.  If
+   A's host is IPv4-only, A's Zone Server also applies 4-to-8 with a
+   handle on A's segment.
+
+   This replaces the inter-company interop prefix of earlier working
+   text ([IPv8], Changes in -03).  Where two organisations instead want
+   their private spaces to reach each other directly, they agree a
+   scoped Route Number or an agreed session for the private Route
+   Numbers concerned, and no translation is needed.
+
+5.8.  8-over-IPv4
+
+   Where the next span toward a destination cannot carry native IPv8,
+   the Zone Server sends the IPv8 packet inside an outer IPv4 header to
+   the destination's Zone Servers or anycast address ([SUPPORT8],
+   8-over-4 Transport); on the anycast leg it receives 8-over-4, removes
+   the outer header and dispatches the inner packet. 8-over-4 is
+   carriage, not translation, and creates no XLATE8 entry.
+
+   A Zone Server MUST accept an 8-over-4 packet whose Destination Route
+   Number is in the private or scoped route space only over a session on
+   which that Route Number has been agreed, even when it owns that Route
+   Number itself ([IPv8], Route Space Protection).
+
+5.9.  Composition with Even/Odd
+
+   An XLATE8 entry belongs to the member that created it, by the host's
+   parity.  Both members hold every entry (Section 4.3), so a reply that
+   arrives at the other member, as it can when the two have different
+   upstreams, is translated identically and delivered.
+
+
+
+
+
+
+Thain                      Expires 11 May 2027                 [Page 15]
+
+
+Internet-Draft              IPv8 Zone Server               November 2026
+
+
+6.  DHCP8 Server
+
+   The Zone Server pair is the DHCP server for each segment it serves,
+   and the segment's DHCP server is the arbitrator of the segment's
+   Primary Route Number ([SUPPORT8], DHCP Is the Arbitrator).  DHCP8 is
+   DHCP [RFC2131] with these options:
+
+              +===========+================================+
+              | Option    | Content                        |
+              +===========+================================+
+              | 222       | IPv8 Default Route Number: the |
+              |           | segment's Primary RN ([IPv8])  |
+              +-----------+--------------------------------+
+              | 223       | IPv8 Interface Mode: normal,   |
+              |           | strict, pnp, guest ([IPv8])    |
+              +-----------+--------------------------------+
+              | acl8-zone | The ACL8 zone the host         |
+              |           | enforces ([SUPPORT8])          |
+              +-----------+--------------------------------+
+              | 3 Router  | Both gateways, the client's    |
+              |           | active gateway first           |
+              +-----------+--------------------------------+
+              | 42 NTP    | The pair                       |
+              +-----------+--------------------------------+
+              | 6 DNS     | The pair                       |
+              +-----------+--------------------------------+
+
+                                 Table 5
+
+   A host with a static address obtains options 222 and 223 by
+   DHCPINFORM; the Zone Server answers it as it answers every client.  A
+   Zone Server that also bridges the segment SHOULD enable DHCP
+   snooping, so that no other device can answer as the segment's DHCP
+   server.
+
+   *Strict segments.* On an interface in strict mode the Zone Server
+   hands out /32 leases with the Classless Static Route option [RFC3442]
+   giving only the gateways, so hosts reach one another only through the
+   gateway ([IPv8], Per-Interface Mode).
+
+   *Holding leases.* A host that has not authenticated receives a /32
+   Local Address in a holding Route Number, whose only next hop is the
+   Zone Server and from which only the authentication endpoint, DHCP8
+   and DNS8 are reachable (Section 8.3).  Holding leases SHOULD be short
+   (RECOMMENDED: 60 seconds), so that a host moves into its authorised
+   Route Number at its next renewal without waiting.  A Zone Server MAY
+   instead use FORCERENEW [RFC3203] where the client supports
+   authenticated FORCERENEW [RFC6704].
+
+
+
+Thain                      Expires 11 May 2027                 [Page 16]
+
+
+Internet-Draft              IPv8 Zone Server               November 2026
+
+
+   *Leases and tokens.* A lease granted on the strength of an OAuth8
+   token MUST NOT outlive the token.  When the token expires without
+   refresh, the next renewal returns the host to the holding Route
+   Number.
+
+   *Registration.* At lease time the Zone Server registers the host in
+   DNS8 ([SUPPORT8], Registration at Lease Time), recording the client
+   as the Zone Server saw it.
+
+   *Duplicate addresses.* The Zone Server probes an address before
+   offering it [RFC5227], and a client that observes a conflict declines
+   it ([IPv8], Per-Segment RN Invariant).
+
+7.  DNS8 Server
+
+7.1.  Roles
+
+   The Zone Server pair runs DNS8 ([SUPPORT8], Part V) in three roles:
+
+   *  *Resolver* for the hosts on its segments.  Every host's DNS
+      queries go to the pair; this is what lets the Zone Server attach a
+      Route Number at DNS time.
+
+   *  *Authoritative server* for the names it registers at lease time;
+      the zone apex is the Zone Server itself.
+
+   *  *Publisher* of the Route Number's ZS records and anycast record
+      under <RN>.asn.arpa, or <RN>.asn.openipv8.org until asn.arpa is
+      delegated.
+
+7.2.  Answers by Client Type
+
+   An IPv8 client receives A8 records and opens an AF_INET8 socket; no
+   handle is used and no state is created at DNS time.  An IPv4-only
+   client receives the answers of Section 5.4.  A Zone Server knows
+   which a client is from its lease (option 222 requested) or from the
+   client's use of ARP8.
+
+   A lookup of the client's own registered name, recognised because the
+   query source matches the registration, returns the client's own
+   address as the client knows it.  DNS8 MUST NOT resolve a name in a
+   scoped Route Number for a client whose Zone Server has no agreed
+   session for that Route Number; no handle is minted for an unreachable
+   target ([IPv8]).
+
+
+
+
+
+
+
+Thain                      Expires 11 May 2027                 [Page 17]
+
+
+Internet-Draft              IPv8 Zone Server               November 2026
+
+
+7.3.  Strict Mode: DNS Authorisation
+
+   On an interface whose DNS policy is strict ([SUPPORT8], DNS Policy),
+   a flow is permitted only if a DNS8 answer to that client produced its
+   destination.  The Zone Server keeps an authorisation set of (client,
+   destination address) pairs from the answers it gives, each valid for
+   the answer's TTL and for as long thereafter as an XLATE8 entry or a
+   connection-tracking entry uses it.  A packet from a strict interface
+   to a destination not in the set is dropped and logged; there is no
+   route of last resort.  This is the rule Policy_Strict of [SUPPORT8],
+   and like it is a default the operator can change.
+
+7.4.  Publication
+
+   The Zone Server publishes its Route Number's ZS records, its anycast
+   record, and its hosts' A8 records.  Publication is optional for an AS
+   that only reaches outward, and necessary for one that wants to be
+   found ([IPv8], Phased Deployment).  The zone SHOULD be signed with
+   DNSSEC; a forged ZS or anycast record redirects a whole Route
+   Number's ingress.
+
+7.5.  Availability Tracking
+
+   DNS8 withdraws an A8 address from answers after five continuous
+   minutes without a successful connection and restores it when
+   successes resume ([SUPPORT8], Availability and Failover).  The Zone
+   Server is where these counters are aggregated.
+
+8.  OAuth8 and Admission
+
+8.1.  OAuth8 Server
+
+   Each Zone Server pair runs OAuth8, an OAuth 2.0 authorization server
+   [RFC6749] that issues signed JSON Web Tokens [RFC7519] [RFC7515].
+   OAuth8 MAY federate authentication to any OpenID Connect provider
+   [OIDC], so that an enterprise uses its existing identity provider and
+   a visitor signs in with a consumer account, each mapped to the Route
+   Number the verified identity warrants.
+
+   Tokens MUST be signed with an asymmetric algorithm [RFC7518]; a Zone
+   Server MUST NOT accept an unsigned token or one signed with a
+   symmetric key shared with clients.  The Zone Servers of one Route
+   Number SHOULD share one issuer identity and signing key set, so that
+   a host authenticated at one site is accepted at every other site of
+   that Route Number without signing in again.  Signing keys are held by
+   the Zone Server and are never exported through the management
+   interface.
+
+
+
+
+Thain                      Expires 11 May 2027                 [Page 18]
+
+
+Internet-Draft              IPv8 Zone Server               November 2026
+
+
+   RADIUS [RFC2865] MAY be used instead of OAuth8 where an operator
+   already runs it; the outcome (Route Number, mode) is the same and is
+   carried in RADIUS attributes rather than token claims.
+
+8.2.  Token Claims
+
+   An OAuth8 token carries the registered claims iss, sub, aud, exp, iat
+   and jti [RFC7519], and the following IPv8 claims:
+
+    +============================+=========+==========================+
+    | Claim                      | Type    | Meaning                  |
+    +============================+=========+==========================+
+    | ipv8:rn                    | array   | Route Numbers the        |
+    |                            | of RN   | subject may be bound to; |
+    |                            |         | the first is the default |
+    +----------------------------+---------+--------------------------+
+    | ipv8:mode                  | string  | Interface mode for the   |
+    |                            |         | subject: normal or       |
+    |                            |         | strict                   |
+    +----------------------------+---------+--------------------------+
+    | ipv8:device                | string  | Device identity the      |
+    |                            |         | token is bound to        |
+    +----------------------------+---------+--------------------------+
+    | ipv8:vlan                  | integer | VLAN, where the operator |
+    |                            |         | assigns VLANs            |
+    +----------------------------+---------+--------------------------+
+    | ipv8:accept-ports          | array   | ACL8 declaration         |
+    |                            |         | ([SUPPORT8])             |
+    +----------------------------+---------+--------------------------+
+    | ipv8:initiate-ports        | array   | ACL8 declaration         |
+    +----------------------------+---------+--------------------------+
+    | ipv8:initiate-destinations | array   | ACL8 declaration         |
+    +----------------------------+---------+--------------------------+
+    | ipv8:program               | string  | ACL8 program identity    |
+    +----------------------------+---------+--------------------------+
+    | ipv8:service               | string  | ACL8 service identity    |
+    +----------------------------+---------+--------------------------+
+    | ipv8:acl-mode              | string  | ACL8 declaration mode    |
+    +----------------------------+---------+--------------------------+
+
+                                  Table 6
+
+   Route Numbers in ipv8:rn are written as in [IPv8], Locator Rendering.
+   A token whose ipv8:rn names a Route Number the Zone Server does not
+   serve on the requesting interface is refused, not partially applied.
+   The ACL8 declaration claims become the host's Layer 2 auto-ACL,
+   subject to the operator's Layer 1 rules ([SUPPORT8], Three-Layer
+   Policy Model).
+
+
+
+Thain                      Expires 11 May 2027                 [Page 19]
+
+
+Internet-Draft              IPv8 Zone Server               November 2026
+
+
+8.3.  Admission Flow
+
+   1.  A host that attaches to a segment and has not authenticated
+       receives a holding lease: a /32 in a holding Route Number
+       (127.255.r.r) whose only next hop is the Zone Server.  It can
+       reach the Zone Server's authentication endpoint, DHCP8 and DNS8,
+       and nothing else.  Confinement is the absence of a route, not a
+       firewall rule ([IPv8], Identity-Driven Access Control).
+
+   2.  The host authenticates over Layer 3: directly over HTTPS, as a
+       captive portal does, or over EAP-TTLS where 802.1X [IEEE8021X]
+       port control is also present.
+
+   3.  The Zone Server validates the token: signature against the
+       issuer's keys, exp, aud, revocation status and ipv8:device
+       against the requesting device.
+
+   4.  On success the Zone Server binds the host to the first Route
+       Number of ipv8:rn that is served on the interface, applies
+       ipv8:mode, loads the auto-ACL, and the host's next DHCP8 renewal
+       gives it an address in that Route Number.
+
+   5.  Where the token carries ipv8:vlan and the Zone Server controls
+       the host's switch port (because it is the switch, or by the
+       switch's own dynamic VLAN mechanism), the port is moved to that
+       VLAN before the renewal.
+
+   The interface's configured mode applies only when the token carries
+   no ipv8:mode.
+
+   *Tokenless devices.* A printer, camera or other appliance that cannot
+   present a token remains in the holding /32, or is placed by MAC
+   Authentication Bypass into a Route Number chosen by operator policy,
+   with plug-and-play enabled on its interface where it needs service
+   discovery.  Token-bearing devices are authenticated into their Route
+   Number; tokenless devices are placed into one by policy and are never
+   promoted by self-assertion.
+
+8.4.  Session Lifecycle and Revocation
+
+   A host's binding to its Route Number lasts as long as its token.  The
+   host refreshes the token before exp by the ordinary OAuth 2.0 refresh
+   flow; a binding whose token expires unrefreshed returns the host to
+   the holding Route Number at its next renewal.
+
+   A token is revoked by its jti [RFC7009].  On revocation the Zone
+   Server:
+
+
+
+
+Thain                      Expires 11 May 2027                 [Page 20]
+
+
+Internet-Draft              IPv8 Zone Server               November 2026
+
+
+   1.  records the jti as revoked and replicates it to its pair member;
+       revocation is acknowledged only when both hold it;
+
+   2.  removes the host's binding and auto-ACL, so its traffic stops at
+       once rather than at the next renewal;
+
+   3.  returns the host to the holding Route Number at its next DHCP8
+       exchange;
+
+   4.  raises a NetLog8 event.
+
+   Distribution of revocations to the other sites of the Route Number is
+   specified in a later revision (Section 17); until then a revoked
+   token remains acceptable at another site until it expires, and
+   operators SHOULD issue short-lived tokens.
+
+9.  Interface Modes on the Zone Server
+
+   The per-interface modes and settings are defined in [IPv8], Per-
+   Interface Mode.  A Zone Server implements them as follows:
+
+   *  *normal.* Peer traffic is switched or bridged on the segment as
+      today; ARP8 and LLDP are active; ACL8 enforces policy.
+
+   *  *strict.* Hosts receive /32 leases with only the gateways as
+      routes (Section 6); ARP and ARP8 answers are given only for the
+      gateways; LLDP is not sent; peer traffic is routed through the
+      Zone Server, where ACL8 applies to it; and the DNS authorisation
+      rule of Section 7.3 applies.
+
+   *  *pnp* (plug-and-play).  Multicast service discovery (mDNS
+      [RFC6762], SSDP, WS-Discovery, LLMNR [RFC4795]) and ARP pass on
+      the segment.  The Zone Server MAY act as IGMP querier [RFC3376]
+      where no other querier is present.
+
+   *  *guest.* The host is in a holding Route Number and reaches only
+      the walled garden of Section 8.3.  It reaches the Internet only
+      where an operator ACL lets it out through NAT.
+
+   Logging in moves a host from guest to its authenticated mode; its
+   token decides, per user and per server, which mode applies.
+
+10.  ACL8 Authority
+
+
+
+
+
+
+
+
+Thain                      Expires 11 May 2027                 [Page 21]
+
+
+Internet-Draft              IPv8 Zone Server               November 2026
+
+
+10.1.  Policy Distribution
+
+   The Zone Server is the policy authority for ACL8: it builds policy
+   from the operator's Layer 1 rules and the Layer 2 auto-ACLs of
+   authenticated hosts, enforces it on its own interfaces, and
+   distributes zone rules to hosts through DHCP8 ([SUPPORT8],
+   Distribution and Logging), so that both the host's enforcement and
+   the Zone Server's must be defeated for lateral movement.  When ACL8
+   policy is configured the Zone Server passes no packets on an
+   interface until the policy for that interface has loaded.
+
+10.2.  Protecting the Zone Server Itself
+
+   The anycast leg faces the public Internet by definition.  ACL8 on the
+   Zone Server itself MUST, by default:
+
+   *  permit on the anycast leg only 8-over-4 for the Route Numbers it
+      serves, the published services, and the routing and tunnel
+      sessions configured on that leg;
+
+   *  permit management only on the management port and management
+      tunnels;
+
+   *  deny everything else and log it.
+
+   Rules protecting the management port MUST NOT be modifiable through
+   the management interface ([SUPPORT8], Distribution and Logging).
+
+11.  Tunnels
+
+11.1.  WireGuard on the Zone Server
+
+   Tunnels are a separate subject from 8-over-4: 8-over-4 is IPv8
+   carried over IPv4 to its proper far end, while a tunnel is an
+   interface with an encrypted path behind it ([SUPPORT8], Tunnels).  A
+   Zone Server offers WireGuard [WIREGUARD] tunnels for three purposes:
+   between sites, from clients, and for management.  Each Zone Server
+   generates a WireGuard key pair at first boot.
+
+11.2.  Site to Site
+
+   An operator joins a remote site with a tunnel interface and one
+   statement ([IPv8], Inter-Site Interconnection):
+
+   interface tunnel 11
+    ip address 64500-10.255.0.1/30
+   ip remote zoneserver ipv4 203.0.113.9 tunnel 11 encrypt
+
+
+
+
+Thain                      Expires 11 May 2027                 [Page 22]
+
+
+Internet-Draft              IPv8 Zone Server               November 2026
+
+
+   When encrypt is specified the two Zone Servers must each accept the
+   other's public key before any traffic passes, as first-contact SSH
+   host keys are accepted: each console shows the peer's key fingerprint
+   and awaits confirmation.  The accepted fingerprint is recorded in the
+   configuration, so a rebuilt Zone Server re-pairs without prompting,
+   and a peer that later presents a different key is refused with an
+   alarm.  Routes are then exchanged over the tunnel by BGP, iBGP for
+   the same Route Number and eBGP over VPNv4 for different ones.
+
+   An ipv8 pseudowire between two Zone Servers is carried inside this
+   tunnel by default and stays down when no such tunnel exists
+   ([SUPPORT8], Pseudowires).
+
+11.3.  Client Tunnels
+
+   A host MAY hold a WireGuard tunnel to its Zone Server for privacy,
+   from inside the network or from outside it.  The host's tunnel key is
+   bound to its OAuth8 identity: the Zone Server accepts a client key
+   only when it is presented with a valid token, records it against the
+   token's sub and ipv8:device, and removes it when the token is
+   revoked.  Traffic from a client tunnel is treated as arriving on a
+   segment in the Route Number the token authorises, with the same ACL8
+   policy.
+
+11.4.  Management Tunnels
+
+   A management tunnel carries management traffic to a remote management
+   system.  The Zone Server dials out, so the site needs no inbound
+   port.  A management tunnel is in the management table and is never a
+   Layer 2 pseudowire ([SUPPORT8], Management Plane).
+
+12.  Configuration and Management
+
+12.1.  One Configuration Surface
+
+   The Zone Server presents one configuration, from which it renders the
+   configuration of every daemon it orchestrates.  The command grammar
+   is similar to that of other networking devices and of FRR: configure
+   terminal, running-config, show commands with output filters, and
+   routing configuration in the same grammar the routing daemons use.
+   The same operations are available through a web services interface,
+   authenticated by an OAuth8 token carrying an administrative scope.
+
+   A minimal single-site configuration:
+
+
+
+
+
+
+
+Thain                      Expires 11 May 2027                 [Page 23]
+
+
+Internet-Draft              IPv8 Zone Server               November 2026
+
+
+   hostname zs-even
+   !
+   interface GigabitEthernet1/1
+    description anycast leg
+    ip address 192.0.2.2/30
+    ip outside
+   !
+   interface GigabitEthernet1/2
+    description native leg
+    vrf forwarding ipv8-64500
+    ip address 64500-10.0.255.1/30
+   !
+   interface Vlan10
+    ip address 64500-10.10.10.254/24
+    interface-mode normal
+    dhcp8 pool
+    dhcp8 option acl8-zone office
+   !
+   interface Vlan20
+    ip address 64500-10.10.20.254/24
+    interface-mode strict
+    dns-lookup mode strict
+   !
+   interface tunnel 11
+    ip address 64500-10.255.0.1/30
+   ip remote zoneserver ipv4 203.0.113.9 tunnel 11 encrypt
+
+12.2.  Validation at Commit
+
+   A configuration is validated as a whole before it is committed to
+   both members of the pair.  A Zone Server MUST reject a configuration
+   that:
+
+   *  puts two Primary Route Numbers on one segment ([IPv8], Per-Segment
+      RN Invariant);
+
+   *  binds one Route Number to two forwarding targets ([IPv8],
+      Forwarding Modes);
+
+   *  brings up the anycast leg without the minimum service set
+      (Section 3.4);
+
+   *  places a VLAN interface in the management table.
+
+   A conflict found at run time, as distinct from commit time, raises a
+   NetLog8 alarm and never stops forwarding.
+
+
+
+
+
+Thain                      Expires 11 May 2027                 [Page 24]
+
+
+Internet-Draft              IPv8 Zone Server               November 2026
+
+
+12.3.  Upgrades
+
+   The members of a pair are upgraded one at a time.  The member being
+   upgraded hands its parity to its peer, is upgraded, re- synchronises,
+   and takes its parity back; at most two packets per flow are lost at
+   each handover.
+
+13.  Telemetry and Ancillary Services
+
+   *NetLog8.* The Zone Server emits NetLog8 [NETLOG8] records for XLATE8
+   binding and pool events, admissions, revocations, ACL8 denies and
+   SEC-ALERTs, failover, and configuration commits.  Handle pool use is
+   reported per interface; a pool above 90% use SHOULD raise an alarm.
+
+   *Time.* The pair are NTP [RFC5905] servers for their segments and are
+   offered in DHCP.  Log timestamps depend on them.
+
+   *LLDP.* The Zone Server runs LLDP on normal and pnp interfaces, uses
+   it to track which MAC is on which port, and sends none on strict
+   interfaces.
+
+   *Spanning tree.* Where the Zone Server bridges segments it runs MSTP.
+   The management port is never part of a bridge.
+
+   *MIB.* Zone Server objects are defined in [MIB].
+
+14.  Implementation Status
+
+   This section records the status of known implementations per
+   [RFC7942] and will be removed before publication as an RFC.
+
+   zoneCore (alpha 4, Go, MIT licence), built on a general console
+   platform with the IPv8 functions as an add-on, implements: DHCP8 with
+   options 222 and 223, DHCPINFORM and lease-time registration of an A8
+   record (a private-use type until one is assigned); DNS8 with A8 and
+   the anycast record under asn.arpa and asn.openipv8.org; the
+   interface-based VRF binding with VRFs named ipv8-<RN> and route
+   distinguisher and route target <RN>:65535; the interface modes; the
+   pseudowire configuration; ACL8 <RN>-<LA> addresses with octet
+   wildcards (matching the Local Address only); the outside-interface
+   border; one routing table display of IPv4 and IPv8; NetLog8 over a
+   provisional TCP transport with heartbeats; and the command grammar of
+   Section 12, which also fronts the routing daemons' configuration.
+   Routing is FRR8 ([IPv8], Implementation Status); forwarding and
+   XLATE8 forwarding are the ip8native kernel module ([SUPPORT8],
+   Implementation Status).
+
+
+
+
+
+Thain                      Expires 11 May 2027                 [Page 25]
+
+
+Internet-Draft              IPv8 Zone Server               November 2026
+
+
+   Not yet implemented: the DNS8 handle mechanism and 4-to-8
+   translation, the ZS record, router 8-to-8 translation, OAuth8 and the
+   guest login, the pseudowire data plane, the inter-site WireGuard
+   tunnel, the synchronisation channel, Policy_Strict, the JWT-derived
+   auto-ACL, and ACL8 matching on the Route Number.  Source is published
+   at https://www.openipv8.org.
+
+15.  Security Considerations
+
+   *The Zone Server is the boundary.* Everything that crosses a route
+   space, a site or an address family crosses it at a Zone Server, so a
+   compromised Zone Server compromises the Route Numbers it serves.  The
+   anycast leg is exposed to the Internet by design; Section 10.2 sets
+   its default posture.  ACL8 is not optional.
+
+   *Management isolation.* Management is reached only through the
+   management port and management tunnels, in a table with static routes
+   only and no route to or from production segments ([SUPPORT8],
+   Management Plane).
+
+   *Signing keys.* OAuth8 signing keys and WireGuard private keys are
+   the Zone Server's most sensitive material.  They MUST NOT be
+   exportable through the management interface and SHOULD be held in a
+   hardware key store where the platform has one.  Compromise of an
+   OAuth8 key allows tokens for any Route Number the issuer serves; key
+   rotation MUST be supported and revokes every token signed by the old
+   key.
+
+   *Tokens.* Tokens are bound to a device by ipv8:device, so a token
+   copied to another device is refused.  Short token lifetimes limit
+   exposure until cross-site revocation is specified.
+
+   *Synchronisation channel.* An attacker on the synchronisation channel
+   could inject leases, bindings or revocations.  The channel is
+   authenticated, encrypted and never routed beyond the pair
+   (Section 4.3).
+
+   *Handle exhaustion.* A client that resolves many names in other Route
+   Numbers consumes handles.  Pools are per interface and per client as
+   seen, so exhaustion is confined to one segment; a Zone Server SHOULD
+   cap the bindings one client may hold and log a client that reaches
+   the cap.
+
+
+
+
+
+
+
+
+
+Thain                      Expires 11 May 2027                 [Page 26]
+
+
+Internet-Draft              IPv8 Zone Server               November 2026
+
+
+   *Clients behind a legacy NAT.* Every host behind a legacy NAT in
+   front of the Zone Server is one client as the Zone Server sees it, so
+   one such host can use a handle minted for another.  This is the
+   shared-identity property such a NAT already has; the remedy is to
+   make the NAT a Zone Server ([IPv8], DNS8 Handles).  A client that
+   uses 198.18.0.0/15 for its own purposes conflicts with handles on
+   that client only ([SUPPORT8], Security Considerations).
+
+   *DNS.* Because the Route Number is attached at DNS time, a forged
+   answer redirects a flow into another Route Number.  The Zone Server
+   is the clients' resolver and SHOULD validate DNSSEC; a forged ZS or
+   anycast record redirects a whole Route Number's ingress, and
+   published zones SHOULD be signed.
+
+   *Key acceptance.* First-contact acceptance of a peer's WireGuard key
+   is trust on first use.  An operator who accepts a fingerprint without
+   checking it out of band may pair with an impostor; fingerprints
+   SHOULD be compared by another channel.
+
+   *Admission.* Confinement in the holding Route Number is the absence
+   of a route, not a filter that can fail open.  Tokenless devices
+   placed by MAC Authentication Bypass are only as trusted as a MAC
+   address, and SHOULD be placed in Route Numbers whose policy assumes
+   that.
+
+16.  IANA Considerations
+
+   IANA is requested to register the following claims in the JSON Web
+   Token Claims registry [RFC7519], with this document as the
+   specification document and the IETF as change controller: ipv8:rn,
+   ipv8:mode, ipv8:device, ipv8:vlan, ipv8:accept-ports, ipv8:initiate-
+   ports, ipv8:initiate-destinations, ipv8:program, ipv8:service and
+   ipv8:acl-mode, with the descriptions given in Section 8.2.
+
+   The DHCP options 222 and 223, the A8 and ZS resource record types,
+   the 198.18.0.0/15 registry note and the IPv8-in-IPv4 protocol number
+   are requested in [IPv8].  The acl8-zone DHCP option is requested in
+   [SUPPORT8].  This document makes no other requests.
+
+17.  Open Issues
+
+   This section lists what this revision does not yet specify.  It will
+   be removed before publication as an RFC.
+
+   *  The wire format of the synchronisation channel (Section 4.3).
+
+   *  Distribution of token revocations to other sites of the same Route
+      Number.
+
+
+
+Thain                      Expires 11 May 2027                 [Page 27]
+
+
+Internet-Draft              IPv8 Zone Server               November 2026
+
+
+   *  vNIC and profile abstractions for user-facing identity selection,
+      and per-profile egress routing ([IPv8], Identity-Driven Access
+      Control).
+
+   *  The registration mechanism by which pnp-mode multicast service
+      discovery is scoped to a Route Number.
+
+   *  The JWT-driven VLAN assignment where the Zone Server does not
+      control the switch port.
+
+18.  Normative References
+
+   [IPv8]     Thain, J. and A. Aleinikov, "Internet Protocol Version 8
+              (IPv8)", Work in Progress, Internet-Draft, draft-thain-
+              ipv8-04, November 2026,
+              <https://datatracker.ietf.org/doc/html/draft-thain-
+              ipv8-04>.
+
+   [RFC2119]  Bradner, S., "Key words for use in RFCs to Indicate
+              Requirement Levels", BCP 14, RFC 2119, March 1997,
+              <https://www.rfc-editor.org/rfc/rfc2119>.
+
+   [RFC2131]  Droms, R., "Dynamic Host Configuration Protocol",
+              RFC 2131, March 1997,
+              <https://www.rfc-editor.org/rfc/rfc2131>.
+
+   [RFC2544]  Bradner, S. and J. McQuaid, "Benchmarking Methodology for
+              Network Interconnect Devices", RFC 2544, March 1999,
+              <https://www.rfc-editor.org/rfc/rfc2544>.
+
+   [RFC3442]  Lemon, T., Cheshire, S., and B. Volz, "The Classless
+              Static Route Option for Dynamic Host Configuration
+              Protocol (DHCP) version 4", RFC 3442, December 2002,
+              <https://www.rfc-editor.org/rfc/rfc3442>.
+
+   [RFC4787]  Audet, F. and C. Jennings, "Network Address Translation
+              (NAT) Behavioral Requirements for Unicast UDP", BCP 127,
+              RFC 4787, January 2007,
+              <https://www.rfc-editor.org/rfc/rfc4787>.
+
+   [RFC5382]  Guha, S., Biswas, K., Ford, B., Sivakumar, S., and P.
+              Srisuresh, "NAT Behavioral Requirements for TCP", BCP 142,
+              RFC 5382, October 2008,
+              <https://www.rfc-editor.org/rfc/rfc5382>.
+
+   [RFC5508]  Srisuresh, P., Ford, B., Sivakumar, S., and S. Guha, "NAT
+              Behavioral Requirements for ICMP", BCP 148, RFC 5508,
+              April 2009, <https://www.rfc-editor.org/rfc/rfc5508>.
+
+
+
+Thain                      Expires 11 May 2027                 [Page 28]
+
+
+Internet-Draft              IPv8 Zone Server               November 2026
+
+
+   [RFC6749]  Hardt, D., "The OAuth 2.0 Authorization Framework",
+              RFC 6749, October 2012,
+              <https://www.rfc-editor.org/rfc/rfc6749>.
+
+   [RFC7009]  Lodderstedt, T., Dronia, S., and M. Scurtescu, "OAuth 2.0
+              Token Revocation", RFC 7009, August 2013,
+              <https://www.rfc-editor.org/rfc/rfc7009>.
+
+   [RFC7515]  Jones, M., Bradley, J., and N. Sakimura, "JSON Web
+              Signature (JWS)", RFC 7515, May 2015,
+              <https://www.rfc-editor.org/rfc/rfc7515>.
+
+   [RFC7518]  Jones, M., "JSON Web Algorithms (JWA)", RFC 7518, May
+              2015, <https://www.rfc-editor.org/rfc/rfc7518>.
+
+   [RFC7519]  Jones, M., Bradley, J., and N. Sakimura, "JSON Web Token
+              (JWT)", RFC 7519, May 2015,
+              <https://www.rfc-editor.org/rfc/rfc7519>.
+
+   [RFC8174]  Leiba, B., "Ambiguity of Uppercase vs Lowercase in RFC
+              2119 Key Words", BCP 14, RFC 8174, May 2017,
+              <https://www.rfc-editor.org/rfc/rfc8174>.
+
+   [SUPPORT8] Thain, J. and A. Aleinikov, "IPv8 Support Protocols: ARP8,
+              ICMPv8, Route8, ACL8, and DNS8", Work in Progress,
+              Internet-Draft, draft-thain-support8-00, November 2026,
+              <https://datatracker.ietf.org/doc/html/draft-thain-
+              support8-00>.
+
+   [WIREGUARD]
+              Donenfeld, J., "WireGuard: Next Generation Kernel Network
+              Tunnel", NDSS 2017, 2017.
+
+19.  Informative References
+
+   [IEEE8021X]
+              IEEE, "IEEE Standard for Local and Metropolitan Area
+              Networks --- Port-Based Network Access Control", IEEE
+              802.1X-2020, 2020.
+
+   [MIB]      Thain, J., "IPv8 Management Information Base and SNMPv8
+              Protocol", draft-thain-ipv8-mib-00, work in progress, not
+              yet released, April 2026.
+
+   [NETLOG8]  Thain, J., "NetLog8 Protocol", draft-thain-netlog8-00,
+              work in progress, not yet released, May 2026.
+
+
+
+
+
+Thain                      Expires 11 May 2027                 [Page 29]
+
+
+Internet-Draft              IPv8 Zone Server               November 2026
+
+
+   [OIDC]     Sakimura, N., Bradley, J., Jones, M., de Medeiros, B., and
+              C. Mortimore, "OpenID Connect Core 1.0 incorporating
+              errata set 2", OpenID Foundation, December 2023.
+
+   [RFC1918]  Rekhter, Y., Moskowitz, B., Karrenberg, D., de Groot, G.
+              J., and E. Lear, "Address Allocation for Private
+              Internets", BCP 5, RFC 1918, February 1996,
+              <https://www.rfc-editor.org/rfc/rfc1918>.
+
+   [RFC2865]  Rigney, C., "Remote Authentication Dial In User Service
+              (RADIUS)", RFC 2865, June 2000,
+              <https://www.rfc-editor.org/rfc/rfc2865>.
+
+   [RFC3203]  T'Joens, Y., Hublet, C., and P. De Schrijver, "DHCP
+              reconfigure extension", RFC 3203, December 2001,
+              <https://www.rfc-editor.org/rfc/rfc3203>.
+
+   [RFC3376]  Cain, B., Deering, S., Kouvelas, I., Fenner, B., and A.
+              Thyagarajan, "Internet Group Management Protocol, Version
+              3", RFC 3376, October 2002,
+              <https://www.rfc-editor.org/rfc/rfc3376>.
+
+   [RFC4795]  Aboba, B., Thaler, D., and L. Esibov, "Link-local
+              Multicast Name Resolution (LLMNR)", RFC 4795, January
+              2007, <https://www.rfc-editor.org/rfc/rfc4795>.
+
+   [RFC5227]  Cheshire, S., "IPv4 Address Conflict Detection", RFC 5227,
+              July 2008, <https://www.rfc-editor.org/rfc/rfc5227>.
+
+   [RFC5398]  Huston, G., "Autonomous System (AS) Number Reservation for
+              Documentation Use", RFC 5398, December 2008,
+              <https://www.rfc-editor.org/rfc/rfc5398>.
+
+   [RFC5737]  Arkko, J., Cotton, M., and L. Vegoda, "IPv4 Address Blocks
+              Reserved for Documentation", RFC 5737, January 2010,
+              <https://www.rfc-editor.org/rfc/rfc5737>.
+
+   [RFC5905]  Mills, D., Martin, J., Burbank, J., and W. Kasch, "Network
+              Time Protocol Version 4: Protocol and Algorithms
+              Specification", RFC 5905, June 2010,
+              <https://www.rfc-editor.org/rfc/rfc5905>.
+
+   [RFC6146]  Bagnulo, M., Matthews, P., and I. van Beijnum, "Stateful
+              NAT64: Network Address and Protocol Translation from IPv6
+              Clients to IPv4 Servers", RFC 6146, April 2011,
+              <https://www.rfc-editor.org/rfc/rfc6146>.
+
+
+
+
+
+Thain                      Expires 11 May 2027                 [Page 30]
+
+
+Internet-Draft              IPv8 Zone Server               November 2026
+
+
+   [RFC6147]  Bagnulo, M., Sullivan, A., Matthews, P., and I. van
+              Beijnum, "DNS64: DNS Extensions for Network Address
+              Translation from IPv6 Clients to IPv4 Servers", RFC 6147,
+              April 2011, <https://www.rfc-editor.org/rfc/rfc6147>.
+
+   [RFC6704]  Miles, D., Dec, W., Bristow, J., and R. Maglione,
+              "Forcerenew Nonce Authentication", RFC 6704, August 2012,
+              <https://www.rfc-editor.org/rfc/rfc6704>.
+
+   [RFC6762]  Cheshire, S. and M. Krochmal, "Multicast DNS", RFC 6762,
+              February 2013, <https://www.rfc-editor.org/rfc/rfc6762>.
+
+   [RFC7942]  Sheffer, Y. and A. Farrel, "Improving Awareness of Running
+              Code: The Implementation Status Section", BCP 205,
+              RFC 7942, July 2016,
+              <https://www.rfc-editor.org/rfc/rfc7942>.
+
+   [ROUTING-PROTOCOLS]
+              Thain, J., "IPv8 Routing Protocols: BGP8, IBGP8, OSPF8,
+              IS-IS8", Work in Progress, Internet-Draft, draft-thain-
+              routing-protocols-00, November 2026,
+              <https://datatracker.ietf.org/doc/html/draft-thain-
+              routing-protocols-00>.
+
+Author's Address
+
+   Jamie Thain
+   One Limited
+   Hamilton
+   Bermuda
+   Email: jamie@one.bm
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+Thain                      Expires 11 May 2027                 [Page 31]
